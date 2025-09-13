@@ -1,0 +1,262 @@
+<!-- filename: live_weather_nowcast.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Weather Nowcast + Forecast (Statistics inside!)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    html,body{height:100%;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif;background:#0b1220;color:#e8eef8}
+    .glass{background:rgba(255,255,255,.06);backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,.08);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .kbd{border:1px solid rgba(255,255,255,.25);padding:.15rem .5rem;border-radius:.5rem;background:rgba(255,255,255,.07)}
+    .pill{border:1px solid rgba(255,255,255,.15)}
+    .mono{font-variant-numeric:tabular-nums}
+  </style>
+</head>
+<body>
+<header class="glass">
+  <div class="max-w-7xl mx-auto px-6 py-6 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#7dd3fc" stroke-width="1.5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M6 6l2.2 2.2M15.8 15.8L18 18M6 18l2.2-2.2M15.8 8.2L18 6" stroke="#38bdf8" stroke-width="1.5"/></svg>
+      <h1 class="text-xl font-bold text-sky-300">Live Weather Nowcast + Forecast</h1>
+    </div>
+    <div class="text-xs text-slate-300">Refresh: <span id="refreshLabel" class="kbd">60s</span> • Last updated: <span id="lastUpdated" class="mono"></span></div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-8 grid lg:grid-cols-3 gap-6">
+  <!-- Controls -->
+  <section class="lg:col-span-1 space-y-6">
+    <div class="glass rounded-3xl p-5">
+      <h2 class="text-lg font-semibold">Location</h2>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <select id="city" class="bg-transparent pill rounded-xl px-3 py-2">
+          <option value="Delhi">Delhi</option>
+          <option value="Mumbai">Mumbai</option>
+          <option value="Chennai">Chennai</option>
+          <option value="Bengaluru">Bengaluru</option>
+          <option value="Hyderabad">Hyderabad</option>
+          <option value="Kolkata">Kolkata</option>
+          <option value="London">London</option>
+          <option value="New York">New York</option>
+          <option value="Los Angeles">Los Angeles</option>
+          <option value="Tokyo">Tokyo</option>
+          <option value="Sydney">Sydney</option>
+          <option value="Paris">Paris</option>
+        </select>
+        <button id="btnFetch" class="px-4 py-2 rounded-xl bg-sky-500 text-slate-900 font-semibold">Fetch</button>
+        <button id="btnGeo" class="px-4 py-2 rounded-xl bg-white/10 pill hover:bg-white/20">Use my location</button>
+      </div>
+      <div class="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <label>Refresh (sec)</label>
+          <input id="refresh" type="range" min="10" max="300" value="60" step="10" class="w-full">
+        </div>
+        <div>
+          <label>Forecast horizon (hrs)</label>
+          <input id="horizon" type="range" min="1" max="12" value="6" step="1" class="w-full">
+        </div>
+      </div>
+      <div class="mt-2 text-xs text-slate-400">Note: weather API updates every few minutes. UI stats update every second; network fetch respects your refresh slider (≥10s).</div>
+    </div>
+
+    <div class="glass rounded-3xl p-5">
+      <h3 class="font-semibold">Statistical Methods</h3>
+      <ul class="list-disc ml-5 text-sm text-slate-300 space-y-1 mt-2">
+        <li>Rolling mean (window 5)</li>
+        <li>Exponential smoothing (α configurable)</li>
+        <li>Linear regression trend → short‑term forecast</li>
+        <li>95% CI from residual standard error</li>
+      </ul>
+      <div class="mt-3 flex items-center gap-2 text-sm"><label class="w-28">Smoothing α</label><input id="alpha" type="range" min="0.05" max="0.6" step="0.05" value="0.3" class="w-full"></div>
+    </div>
+
+    <div class="glass rounded-3xl p-5">
+      <h3 class="font-semibold">Export</h3>
+      <div class="flex gap-3 mt-2">
+        <button id="btnPNG" class="px-4 py-2 rounded-xl bg-white/10 pill hover:bg-white/20">Save Charts PNG</button>
+        <button id="btnMD" class="px-4 py-2 rounded-xl bg-white/10 pill hover:bg-white/20">Save Report .md</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Charts & KPIs -->
+  <section class="lg:col-span-2 space-y-6">
+    <div class="grid sm:grid-cols-4 gap-3">
+      <div class="glass rounded-2xl p-4"><div class="text-xs text-slate-400">Temp (°C)</div><div id="kTemp" class="text-2xl font-bold mono">—</div></div>
+      <div class="glass rounded-2xl p-4"><div class="text-xs text-slate-400">Humidity (%)</div><div id="kHum" class="text-2xl font-bold mono">—</div></div>
+      <div class="glass rounded-2xl p-4"><div class="text-xs text-slate-400">Wind (m/s)</div><div id="kWind" class="text-2xl font-bold mono">—</div></div>
+      <div class="glass rounded-2xl p-4"><div class="text-xs text-slate-400">Trend (°C/hr)</div><div id="kTrend" class="text-2xl font-bold mono">—</div></div>
+    </div>
+
+    <div class="glass rounded-3xl p-5">
+      <h2 class="text-lg font-semibold mb-2">Temperature Nowcast & Forecast</h2>
+      <canvas id="chartTemp" height="140"></canvas>
+    </div>
+    <div class="glass rounded-3xl p-5">
+      <h2 class="text-lg font-semibold mb-2">Humidity & Wind</h2>
+      <canvas id="chartOther" height="120"></canvas>
+    </div>
+
+    <div class="glass rounded-3xl p-5">
+      <h2 class="text-lg font-semibold mb-2">Auto‑Insights</h2>
+      <div id="insights" class="text-slate-200 text-sm leading-6"></div>
+    </div>
+  </section>
+</main>
+
+<footer class="max-w-7xl mx-auto px-6 pb-10 text-xs text-slate-400 flex justify-between flex-wrap gap-3">
+  <span>© <span id="yr"></span> Live Weather Nowcast — HTML • Tailwind • Chart.js • Open‑Meteo API</span>
+  <span>Shortcuts: <span class="kbd">R</span> refresh now • <span class="kbd">P</span> save PNG • <span class="kbd">M</span> save report</span>
+</footer>
+
+<script>
+  // ===== Utilities =====
+  const el = id => document.getElementById(id);
+  const nowStr = () => new Date().toLocaleString();
+  function rollingMean(arr, w=5){ const out=[]; for(let i=0;i<arr.length;i++){ const s=Math.max(0,i-w+1); const a=arr.slice(s,i+1); out.push(a.reduce((x,y)=>x+y,0)/a.length);} return out; }
+  function expSmooth(arr, alpha=0.3){ const out=[]; let s=arr[0]; for(let i=0;i<arr.length;i++){ s = alpha*arr[i] + (1-alpha)*s; out.push(s);} return out; }
+  // simple linear regression y ~ a + b*x, returns {a,b,stderr}
+  function linreg(y){ const n=y.length; const x=[...Array(n).keys()]; const mx=(n-1)/2; const my=y.reduce((a,b)=>a+b,0)/n; let Sxx=0,Sxy=0,Syy=0; for(let i=0;i<n;i++){ const dx=i-mx, dy=y[i]-my; Sxx+=dx*dx; Sxy+=dx*dy; Syy+=dy*dy; } const b=Sxy/Sxx; const a=my - b*mx; // residual std error
+    let rss=0; for(let i=0;i<n;i++){ const e=y[i] - (a + b*i); rss += e*e; } const sigma=Math.sqrt(rss/(n-2)); return {a,b,stderr:sigma}; }
+  function addMinutes(date, minutes){ return new Date(date.getTime()+minutes*60000); }
+
+  // ===== Data state =====
+  let state = { lat:null, lon:null, city:'Delhi', lastFetch:null, current:{}, series:{ time:[], temp:[], hum:[], wind:[] } };
+  let timers = { tick:null, fetch:null };
+
+  // ===== Charts =====
+  let chartTemp, chartOther;
+  function upsertChart(ctx, cfg){ if (ctx._chart){ ctx._chart.data=cfg.data; ctx._chart.options=cfg.options; ctx._chart.update(); return ctx._chart;} const c=new Chart(ctx, cfg); ctx._chart=c; return c; }
+
+  function drawCharts(){
+    const t = state.series.time.map(ts=> new Date(ts).toLocaleTimeString());
+    // Forecast via linear regression on last 12 points (≈ last 12 hours if hourly)
+    const y = state.series.temp.slice(-12);
+    const xStart = state.series.time.length-12;
+    let forecastX=[], forecastY=[], ciLo=[], ciHi=[];
+    if (y.length>=6){
+      const {a,b,stderr} = linreg(y);
+      const horizonHrs = +el('horizon').value;
+      for(let k=1;k<=horizonHrs;k++){
+        const idx = (y.length-1)+k; const yhat = a + b*(xStart + idx);
+        forecastX.push(addMinutes(new Date(state.series.time.at(-1)), k*60).toLocaleTimeString());
+        forecastY.push(yhat);
+        const band = 1.96*stderr; ciLo.push(yhat-band); ciHi.push(yhat+band);
+      }
+      el('kTrend').textContent = (b*60).toFixed(2); // °C per hour (since x step is 1 hour)
+    } else {
+      el('kTrend').textContent = '—';
+    }
+
+    const sm = expSmooth(state.series.temp, +el('alpha').value);
+    const rm = rollingMean(state.series.temp, 5);
+
+    chartTemp = upsertChart(document.getElementById('chartTemp'), {
+      type:'line',
+      data:{ labels: t.concat(forecastX), datasets:[
+        {label:'Temperature (°C)', data: state.series.temp, fill:false, pointRadius:0, borderWidth:2},
+        {label:'Exp Smooth', data: sm, borderDash:[4,4], pointRadius:0, borderWidth:1.5},
+        {label:'Rolling Mean', data: rm, borderDash:[2,3], pointRadius:0, borderWidth:1.5},
+        {label:'Forecast', data: new Array(state.series.temp.length-1).fill(null).concat([state.series.temp.at(-1)]).concat(forecastY), pointRadius:0, borderWidth:2},
+        {label:'95% CI (lo)', data: new Array(state.series.temp.length-1).fill(null).concat([state.series.temp.at(-1)]).concat(ciLo), borderDash:[6,4], pointRadius:0, borderWidth:1},
+        {label:'95% CI (hi)', data: new Array(state.series.temp.length-1).fill(null).concat([state.series.temp.at(-1)]).concat(ciHi), borderDash:[6,4], pointRadius:0, borderWidth:1}
+      ]},
+      options:{ responsive:true, plugins:{legend:{labels:{color:'#dbeafe'}}}, scales:{ x:{ticks:{color:'#9fb2cc'}}, y:{ticks:{color:'#9fb2cc'}} } }
+    });
+
+    chartOther = upsertChart(document.getElementById('chartOther'), {
+      type:'line',
+      data:{ labels:t, datasets:[
+        {label:'Humidity %', data: state.series.hum, pointRadius:0, borderWidth:2},
+        {label:'Wind m/s', data: state.series.wind, pointRadius:0, borderWidth:2}
+      ]},
+      options:{ responsive:true, plugins:{legend:{labels:{color:'#dbeafe'}}}, scales:{ x:{ticks:{color:'#9fb2cc'}}, y:{ticks:{color:'#9fb2cc'}} } }
+    });
+  }
+
+  function insights(){
+    const c = state.current;
+    const lines = [];
+    if (c.temperature_2m!=null){ lines.push(`Temperature now is <span class="mono">${c.temperature_2m.toFixed(1)}°C</span> with humidity <span class="mono">${c.relative_humidity_2m}%</span> and wind <span class="mono">${c.wind_speed_10m} m/s</span>.`); }
+    if (state.series.temp.length>8){
+      const last = state.series.temp.at(-1);
+      const mean24 = state.series.temp.slice(-24).reduce((a,b)=>a+b,0)/Math.min(24,state.series.temp.length);
+      lines.push(`Last reading is ${ (last>=mean24? 'above' : 'below') } the 24‑hour average (<span class="mono">${mean24.toFixed(1)}°C</span>).`);
+    }
+    const trend = el('kTrend').textContent;
+    if (trend !== '—'){ const t = parseFloat(trend); lines.push(`Short‑term trend ≈ <span class="mono">${t.toFixed(2)}°C/hr</span> (${ t>0 ? 'warming' : t<0 ? 'cooling' : 'flat' }).`); }
+    el('insights').innerHTML = lines.join(' ');
+  }
+
+  // ===== Fetch helpers (Open‑Meteo, no API key, CORS enabled) =====
+  async function geocodeCity(name){
+    const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(name)}&count=1`;
+    const res = await fetch(url); const data = await res.json();
+    if (!data.results || !data.results.length) throw new Error('City not found');
+    const r = data.results[0]; return {lat:r.latitude, lon:r.longitude, label:`${r.name}${r.country? ', '+r.country:''}`};
+  }
+
+  async function fetchWeather(){
+    if (state.lat==null || state.lon==null) { const g = await geocodeCity(state.city); state.lat=g.lat; state.lon=g.lon; }
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${state.lat}&longitude=${state.lon}&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m&current=temperature_2m,relative_humidity_2m,wind_speed_10m&timezone=auto`;
+    const res = await fetch(url); const data = await res.json();
+    if (!data || !data.hourly) throw new Error('No data');
+    state.lastFetch = new Date();
+    // current
+    if (data.current){ state.current = data.current; el('kTemp').textContent = `${data.current.temperature_2m.toFixed?.(1) ?? data.current.temperature_2m}°`; el('kHum').textContent = `${data.current.relative_humidity_2m}`; el('kWind').textContent = `${data.current.wind_speed_10m}`; }
+    // series
+    state.series.time = data.hourly.time; // ISO strings
+    state.series.temp = data.hourly.temperature_2m;
+    state.series.hum = data.hourly.relative_humidity_2m;
+    state.series.wind = data.hourly.wind_speed_10m;
+
+    drawCharts();
+    insights();
+  }
+
+  // ===== UI wiring =====
+  async function doFetch(){ try{ await fetchWeather(); } catch(e){ console.error(e); alert('Fetch error: '+e.message); } }
+  el('btnFetch').addEventListener('click', async ()=>{ state.city = el('city').value; state.lat=null; state.lon=null; await doFetch(); });
+  el('btnGeo').addEventListener('click', ()=>{
+    if (!navigator.geolocation) { alert('Geolocation not supported'); return; }
+    navigator.geolocation.getCurrentPosition(async pos=>{ state.lat=pos.coords.latitude; state.lon=pos.coords.longitude; state.city='My Location'; await doFetch(); }, err=> alert('Location error: '+err.message));
+  });
+
+  // refresh slider + live ticks
+  function setupTimers(){
+    const sec = +el('refresh').value; el('refreshLabel').textContent = sec+'s';
+    if (timers.fetch) clearInterval(timers.fetch);
+    timers.fetch = setInterval(doFetch, sec*1000);
+  }
+  el('refresh').addEventListener('input', ()=>{ el('refreshLabel').textContent = el('refresh').value+'s'; });
+  el('refresh').addEventListener('change', setupTimers);
+
+  // live second tick UI (does not refetch each second; shows clock/last updated)
+  function startTick(){ if (timers.tick) clearInterval(timers.tick); timers.tick = setInterval(()=>{ el('lastUpdated').textContent = state.lastFetch ? new Date().toLocaleTimeString() : '—'; }, 1000); }
+
+  // Export
+  function savePNG(){ ['chartTemp','chartOther'].forEach(id=>{ const c = document.getElementById(id); const a=document.createElement('a'); a.download=id+'.png'; a.href=c.toDataURL(); a.click(); }); }
+  function saveMD(){ const lines = [
+    '# Live Weather Nowcast Report', '', `Time: ${nowStr()}`, `City: ${state.city}`, `Lat,Lon: ${state.lat?.toFixed?.(3)}, ${state.lon?.toFixed?.(3)}`,
+    '', '## Current', `- Temp: ${el('kTemp').textContent}`, `- Humidity: ${el('kHum').textContent}%`, `- Wind: ${el('kWind').textContent} m/s`,
+    '', '## Trend & Forecast', `- Trend (°C/hr): ${el('kTrend').textContent}`, `- Smoothing α: ${el('alpha').value}`, `- Horizon (hrs): ${el('horizon').value}`
+  ].join('\n'); const blob = new Blob([lines], {type:'text/markdown'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='weather_report.md'; a.click(); URL.revokeObjectURL(url); }
+  el('btnPNG').addEventListener('click', savePNG);
+  el('btnMD').addEventListener('click', saveMD);
+
+  // Shortcuts
+  document.addEventListener('keydown', (e)=>{ const k=e.key.toLowerCase(); if (k==='r') doFetch(); if (k==='p') savePNG(); if (k==='m') saveMD(); });
+  el('alpha').addEventListener('input', drawCharts);
+  el('horizon').addEventListener('input', drawCharts);
+
+  // Init
+  (async function init(){ el('yr').textContent = new Date().getFullYear(); startTick(); await doFetch(); setupTimers(); })();
+</script>
+</body>
+</html>
